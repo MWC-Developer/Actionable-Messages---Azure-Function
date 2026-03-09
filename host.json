@@ -1,0 +1,18 @@
+{
+    "version": "2.0",
+    "logging": {
+      "logLevel": {
+        "default": "Information",
+        "Function": "Information",
+        "FeedbackSample.Security.ActionableMessageTokenValidator": "Information",
+        "Host.Results": "Debug",
+        "Host.Aggregator": "Debug"
+      },
+        "applicationInsights": {
+            "samplingSettings": {
+                "isEnabled": false
+            },
+            "enableLiveMetricsFilters": false
+        }
+    }
+}

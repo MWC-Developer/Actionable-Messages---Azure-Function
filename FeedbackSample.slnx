@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="FeedbackMailSender/FeedbackMailSender.csproj" />
+  <Project Path="FeedbackSample.csproj" />
+</Solution>
