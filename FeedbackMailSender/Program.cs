@@ -29,6 +29,7 @@ internal static class Program
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
             .AddJsonFile($"appsettings.{environment}.json", optional: true, reloadOnChange: false)
+            .AddJsonFile("local.appsettings.json", optional: true, reloadOnChange: false)
             .AddEnvironmentVariables()
             .Build();
 
@@ -44,6 +45,9 @@ internal static class Program
         mailOptions.Normalize();
         mailOptions.EnsureValid(entraIdOptions.AuthMode);
 
+        // Create the card signer only when a signing certificate thumbprint is configured.
+        CardSigner? cardSigner = mailOptions.IsSigningEnabled ? new CardSigner(mailOptions) : null;
+
         using var httpClient = new HttpClient();
         using var cts = new CancellationTokenSource();
 
@@ -54,13 +58,14 @@ internal static class Program
         };
 
         var tokenProvider = new TokenProvider(entraIdOptions);
-        var payloadFactory = new GraphMailPayloadFactory(mailOptions);
+        var payloadFactory = new GraphMailPayloadFactory(mailOptions, cardSigner);
         var sender = new GraphMailSender(httpClient, tokenProvider, payloadFactory, mailOptions, entraIdOptions);
 
         try
         {
             var result = await sender.SendMailAsync(cts.Token).ConfigureAwait(false);
-            Console.WriteLine($"Graph sendMail accepted card {result.CardId}.");
+            string mode = cardSigner is not null ? "signed" : "unsigned";
+            Console.WriteLine($"Graph sendMail accepted {mode} card {result.CardId}.");
             return 0;
         }
         catch (TaskCanceledException)

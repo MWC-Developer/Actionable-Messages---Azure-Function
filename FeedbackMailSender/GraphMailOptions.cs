@@ -44,6 +44,19 @@ internal sealed class GraphMailOptions
     public string? CardPrompt { get; set; }
 
     /// <summary>
+    /// Thumbprint of the RSA/X509 signing certificate stored in CurrentUser\My.
+    /// When set, the card payload is signed and embedded as a SignedAdaptiveCard (JWS).
+    /// Leave null or empty to use the plain script-tag embedding (requires DKIM/SPF instead).
+    /// </summary>
+    public string? SigningCertificateThumbprint { get; set; }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when signed-card mode is active.
+    /// </summary>
+    public bool IsSigningEnabled =>
+        !string.IsNullOrWhiteSpace(SigningCertificateThumbprint);
+
+    /// <summary>
     /// Applies defaults for missing strings and removes whitespace from configured values.
     /// </summary>
     public void Normalize()
@@ -59,6 +72,7 @@ internal sealed class GraphMailOptions
 		FunctionKey = NormalizeString(FunctionKey);
         CardTitle = NormalizeString(CardTitle) ?? "How did we do?";
         CardPrompt = NormalizeString(CardPrompt) ?? "Pick a rating and leave an optional comment.";
+        SigningCertificateThumbprint = NormalizeString(SigningCertificateThumbprint);
     }
 
     /// <summary>
@@ -96,9 +110,10 @@ internal sealed class GraphMailOptions
 			throw new InvalidOperationException("GraphMail:FunctionKey must be provided.");
 		}
 
-        if (authMode == EntraIdAuthMode.Application && string.IsNullOrWhiteSpace(SenderUserId))
+        if ((authMode == EntraIdAuthMode.Application || IsSigningEnabled) && string.IsNullOrWhiteSpace(SenderUserId))
         {
-            throw new InvalidOperationException("GraphMail:SenderUserId is required when using application permissions.");
+            throw new InvalidOperationException(
+                "GraphMail:SenderUserId is required when using application permissions or signed cards.");
         }
     }
 

@@ -20,6 +20,8 @@ namespace FeedbackMailSender;
 
 /// <summary>
 /// Builds Graph sendMail payloads that embed actionable feedback adaptive cards.
+/// When a <see cref="CardSigner"/> is provided the card is embedded as a
+/// SignedAdaptiveCard (JWS) section instead of a plain script tag.
 /// </summary>
 internal sealed class GraphMailPayloadFactory
 {
@@ -31,13 +33,20 @@ internal sealed class GraphMailPayloadFactory
     };
 
     private readonly GraphMailOptions _options;
+    private readonly CardSigner? _signer;
 
     /// <summary>
-    /// Initializes the factory with the current mail composition options.
+    /// Initializes the factory with the current mail composition options and an optional card signer.
     /// </summary>
-    public GraphMailPayloadFactory(GraphMailOptions options)
+    /// <param name="options">Mail composition options.</param>
+    /// <param name="signer">
+    /// When provided, cards are signed and embedded as a SignedAdaptiveCard.
+    /// Pass <see langword="null"/> to use plain script-tag embedding (DKIM/SPF required).
+    /// </param>
+    public GraphMailPayloadFactory(GraphMailOptions options, CardSigner? signer = null)
     {
         _options = options;
+        _signer = signer;
     }
 
     /// <summary>
@@ -74,26 +83,57 @@ internal sealed class GraphMailPayloadFactory
     }
 
     /// <summary>
-    /// Produces a simple HTML wrapper that hosts the adaptive card payload.
+    /// Produces an HTML body that hosts the adaptive card payload.
+    /// When a signer is configured, appends a SignedAdaptiveCard section;
+    /// otherwise falls back to the plain <c>application/adaptivecard+json</c> script tag.
     /// </summary>
     private string BuildHtmlBody(string adaptiveCardJson)
     {
-        var introText = string.IsNullOrWhiteSpace(_options.IntroText)
+        string introText = string.IsNullOrWhiteSpace(_options.IntroText)
             ? "We value your feedback."
             : WebUtility.HtmlEncode(_options.IntroText);
 
-        var builder = new StringBuilder();
+        StringBuilder builder = new();
         builder.AppendLine("<html>");
         builder.AppendLine("<body style=\"font-family:'Segoe UI', Arial, sans-serif;\">");
         builder.AppendLine($"<p>{introText}</p>");
-        builder.AppendLine("<div>");
-        builder.AppendLine("<script type=\"application/adaptivecard+json\">");
-        builder.AppendLine(adaptiveCardJson);
-        builder.AppendLine("</script>");
-        builder.AppendLine("</div>");
+
+        if (_signer is not null)
+        {
+            // Signed card: embed a JWS-signed payload in Microdata format.
+            // The plain <script> fallback is omitted; Outlook renders the
+            // SignedAdaptiveCard section when the signature is valid.
+            string signedPayload = _signer.CreateSignedPayload(adaptiveCardJson, _options.Recipients);
+            builder.AppendLine(BuildSignedCardSection(signedPayload));
+        }
+        else
+        {
+            // Unsigned fallback: relies on DKIM/SPF for sender verification.
+            builder.AppendLine("<div>");
+            builder.AppendLine("<script type=\"application/adaptivecard+json\">");
+            builder.AppendLine(adaptiveCardJson);
+            builder.AppendLine("</script>");
+            builder.AppendLine("</div>");
+        }
+
         builder.AppendLine("</body>");
         builder.AppendLine("</html>");
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// Produces the Microdata HTML section that wraps the compact JWS token,
+    /// as required by the SignedAdaptiveCard specification.
+    /// </summary>
+    private static string BuildSignedCardSection(string signedPayload)
+    {
+        StringBuilder section = new();
+        section.AppendLine("<section itemscope itemtype=\"http://schema.org/SignedAdaptiveCard\">");
+        section.AppendLine("    <meta itemprop=\"@context\" content=\"http://schema.org/extensions\" />");
+        section.AppendLine("    <meta itemprop=\"@type\" content=\"SignedAdaptiveCard\" />");
+        section.AppendLine($"    <div itemprop=\"signedAdaptiveCard\" style=\"mso-hide:all;display:none;max-height:0px;overflow:hidden;\">{signedPayload}</div>");
+        section.AppendLine("</section>");
+        return section.ToString();
     }
 
     /// <summary>
